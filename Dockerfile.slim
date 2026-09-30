@@ -30,8 +30,15 @@ COPY drizzle ./drizzle
 
 RUN mkdir /home/vane/uploads
 
-RUN yarn add playwright
-RUN yarn playwright install --with-deps --only-shell chromium
+# `yarn add` re-resolves the whole dependency tree in THIS (runtime) stage, which
+# bumps the caret-ranged `next` past the version the builder stage compiled
+# against. The prebuilt .next output is then run by a different Next than built
+# it, and the container dies at boot with
+#   TypeError: Cannot read properties of undefined (reading 'validationLevel')
+# `npm install --no-save` adds the one package without upgrading what is already
+# installed, so builder and runtime stay on the same Next.
+RUN npm install --no-save playwright
+RUN npx playwright install --with-deps --only-shell chromium
 
 EXPOSE 3000
 
