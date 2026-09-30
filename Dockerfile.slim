@@ -37,7 +37,10 @@ RUN mkdir /home/vane/uploads
 #   TypeError: Cannot read properties of undefined (reading 'validationLevel')
 # `npm install --no-save` adds the one package without upgrading what is already
 # installed, so builder and runtime stay on the same Next.
-RUN npm install --no-save playwright
+# --omit=dev --legacy-peer-deps: the project's devDependencies have a pre-existing
+# peer conflict (eslint@8 vs eslint-config-next needing eslint>=9) that yarn
+# ignores and npm refuses, so a plain `npm install` fails with ERESOLVE.
+RUN npm install --no-save --omit=dev --legacy-peer-deps playwright
 RUN npx playwright install --with-deps --only-shell chromium
 
 EXPOSE 3000
