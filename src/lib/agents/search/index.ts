@@ -12,6 +12,42 @@ import { getTokenCount } from '@/lib/utils/splitText';
 
 class SearchAgent {
   async searchAsync(session: SessionManager, input: SearchAgentInput) {
+    try {
+      await this.runSearch(session, input);
+    } catch (err) {
+      // On success the row is set to 'completed' at the end of runSearch. Without
+      // this, a failure left it at 'answering' forever, which is also what an
+      // in-flight run looks like — so neither the UI nor an operator could tell a
+      // dead run from a slow one. The schema already allows 'error'.
+      // Whatever blocks were produced before the failure are kept, so a partial
+      // answer is not thrown away.
+      try {
+        await db
+          .update(messages)
+          .set({
+            status: 'error',
+            responseBlocks: session.getAllBlocks(),
+          })
+          .where(
+            and(
+              eq(messages.chatId, input.chatId),
+              eq(messages.messageId, input.messageId),
+            ),
+          )
+          .execute();
+      } catch (dbErr) {
+        console.error('Failed to mark message as errored:', dbErr);
+      }
+
+      // Re-thrown so the route's handler still reports it to the client.
+      throw err;
+    }
+  }
+
+  private async runSearch(
+    session: SessionManager,
+    input: SearchAgentInput,
+  ) {
     const exists = await db.query.messages.findFirst({
       where: and(
         eq(messages.chatId, input.chatId),
