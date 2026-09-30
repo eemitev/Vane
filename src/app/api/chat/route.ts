@@ -210,20 +210,44 @@ export const POST = async (req: Request) => {
       }
     });
 
-    agent.searchAsync(session, {
-      chatHistory: history,
-      followUp: message.content,
-      chatId: body.message.chatId,
-      messageId: body.message.messageId,
-      config: {
-        llm,
-        embedding: embedding,
-        sources: body.sources as SearchSources[],
-        mode: body.optimizationMode,
-        fileIds: body.files,
-        systemInstructions: body.systemInstructions || 'None',
-      },
-    });
+    agent
+      .searchAsync(session, {
+        chatHistory: history,
+        followUp: message.content,
+        chatId: body.message.chatId,
+        messageId: body.message.messageId,
+        config: {
+          llm,
+          embedding: embedding,
+          sources: body.sources as SearchSources[],
+          mode: body.optimizationMode,
+          fileIds: body.files,
+          systemInstructions: body.systemInstructions || 'None',
+        },
+      })
+      .catch((err: any) => {
+        // This promise was floating, so any failure in the research loop became
+        // an unhandledRejection: the SSE stream was never closed and the client
+        // waited indefinitely with no indication of what went wrong. Provider
+        // errors such as quota or rate-limit responses are actionable, but only
+        // if they reach the user.
+        //
+        // The session already has an 'error' channel that writes to the stream
+        // and closes the writer (see the subscribe handler above).
+        console.error('searchAsync failed:', err);
+
+        // Provider SDK errors carry the useful text on err.error.message and the
+        // HTTP status on err.status; fall back to the plain message.
+        const status = err?.status ?? err?.response?.status;
+        const detail =
+          err?.error?.message ??
+          err?.message ??
+          (typeof err === 'string' ? err : 'Unknown error');
+
+        session.emit('error', {
+          data: status ? `${status}: ${detail}` : detail,
+        });
+      });
 
     ensureChatExists({
       id: body.message.chatId,
