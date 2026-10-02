@@ -1,3 +1,16 @@
+> **About this fork**
+>
+> I self-host Vane on my own hardware and run the models through OpenRouter, so the fixes
+> collected here are the ones that matter for that setup — mostly reliability of streamed
+> tool calls and error handling.
+>
+> The upstream maintainer has been busy lately and several good fixes are sitting in open
+> PRs. Where one solves a problem I've hit, I carry it here with credit to its author rather
+> than writing my own version of it.
+>
+> Improvements from anyone are very welcome — open an issue or a PR. I'd like this to be
+> genuinely good, not just good enough for me.
+
 # Vane 🔍
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/ItzCrazyKns/Vane?style=social)](https://github.com/ItzCrazyKns/Vane/stargazers)
