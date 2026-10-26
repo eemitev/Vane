@@ -8,36 +8,50 @@ import {
   PopoverPanel,
 } from '@headlessui/react';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlignLeft, ChevronDown, FileText, Wand2, Zap } from 'lucide-react';
+import {
+  ChevronDown,
+  FileText,
+  Newspaper,
+  Sparkles,
+  StickyNote,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 /* Four stops rather than three: "auto" has to be reachable, because it is the
  * only setting that lets the research depth decide the answer length, and it is
- * the default. */
+ * the default.
+ *
+ * Icons are document sizes -- a note, a page, a report -- rather than text
+ * density. Two reasons. Zap was the obvious choice for Brief and is already the
+ * Speed icon on the research-depth control sitting beside this one, in the same
+ * orange, so picking Brief showed two identical bolts. And at 16px the
+ * density glyphs (AlignLeft against AlignJustify) differ by a couple of pixels
+ * of line width, which is not a difference anyone can read; these three
+ * silhouettes are distinct at that size. */
 const STYLES = [
   {
     key: 'auto',
     title: 'Auto',
     description: 'Length follows the research depth you picked.',
-    icon: <Wand2 size={16} className="text-[#9C27B0]" />,
+    icon: <Sparkles size={16} className="text-[#9C27B0]" />,
   },
   {
     key: 'brief',
     title: 'Brief',
     description: 'Answer the question in a few sentences, no headings.',
-    icon: <Zap size={16} className="text-[#FF9800]" />,
+    icon: <StickyNote size={16} className="text-[#FF9800]" />,
   },
   {
     key: 'standard',
     title: 'Standard',
     description: 'A short answer with a few supporting points.',
-    icon: <AlignLeft size={16} className="text-[#4CAF50]" />,
+    icon: <FileText size={16} className="text-[#4CAF50]" />,
   },
   {
     key: 'deep',
     title: 'Deep',
     description: 'A full written report with headings and analysis.',
-    icon: <FileText size={16} className="text-[#2196F3]" />,
+    icon: <Newspaper size={16} className="text-[#2196F3]" />,
   },
 ];
 

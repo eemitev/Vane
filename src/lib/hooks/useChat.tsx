@@ -252,6 +252,42 @@ const loadMessages = async (
 };
 
 export 
+/**
+ * Pulls a message back from the server after a stream ended without finishing.
+ *
+ * The writer runs server-side and persists its answer regardless of whether
+ * anyone is still connected: one observed run wrote 629 characters, stored
+ * them, and marked the message completed while the browser showed nothing.
+ * A dropped stream and a slow model looked identical, and the answer was only
+ * a reload away without anything saying so.
+ */
+const refetchMessage = async (
+  chatId: string,
+  messageId: string,
+): Promise<{ responseBlocks: Block[]; status: string } | null> => {
+  try {
+    const res = await fetch(`/api/chats/${chatId}`);
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const found = (data.messages ?? []).find(
+      (m: any) => m.messageId === messageId,
+    );
+
+    if (!found) return null;
+
+    return {
+      responseBlocks:
+        typeof found.responseBlocks === 'string'
+          ? JSON.parse(found.responseBlocks)
+          : (found.responseBlocks ?? []),
+      status: found.status,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const chatContext = createContext<ChatContext>({
   chatHistory: [],
   chatId: '',
@@ -783,6 +819,67 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     };
   };
 
+  /**
+   * Called whenever a stream ends, however it ended.
+   *
+   * The server keeps working and persists the answer regardless of who is
+   * listening: one observed run wrote 629 characters, stored them and marked
+   * the message completed while the browser showed nothing. If messageEnd
+   * never arrived, ask the server what happened rather than leaving a spinner
+   * over an answer that already exists.
+   *
+   * Polls while the run is still going, because losing the connection at the
+   * 25-second mark of a three-minute run is the common case -- a single
+   * refetch would find it unfinished and give up just before the answer landed.
+   */
+  const recoverIfUnfinished = async (chatId: string, messageId: string) => {
+    if (handledMessageEndRef.current.has(messageId)) return;
+
+    const deadline = Date.now() + 5 * 60_000;
+    let told = false;
+
+    while (Date.now() < deadline) {
+      const recovered = await refetchMessage(chatId, messageId);
+
+      if (recovered && recovered.status !== 'answering') {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.messageId === messageId
+              ? {
+                  ...msg,
+                  responseBlocks: recovered.responseBlocks,
+                  status: recovered.status as Message['status'],
+                }
+              : msg,
+          ),
+        );
+
+        if (recovered.status === 'error') {
+          toast.error('That search failed. The details are in the panel above.');
+        } else if (told) {
+          toast.success('Reconnected — here is the answer.');
+        }
+
+        setLoading(false);
+        setResearchEnded(true);
+        return;
+      }
+
+      /* Say something once, immediately, so the UI is not silently pretending
+       * to stream while it waits. */
+      if (!told) {
+        told = true;
+        toast.info('Lost the connection. Still working — this will update when it finishes.');
+      }
+
+      await new Promise((r) => setTimeout(r, 5_000));
+    }
+
+    toast.error('Lost the connection to this answer. Reload to pick it up.');
+    setLoading(false);
+    setResearchEnded(true);
+  };
+
   const sendMessage: ChatContext['sendMessage'] = async (
     message,
     messageId,
@@ -860,19 +957,31 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
     const messageHandler = getMessageHandler(newMessage);
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    /* reader.read() *throws* when the socket dies -- it does not return done.
+     * The first version of this recovery sat after the loop and never ran,
+     * because the exception escaped sendMessage entirely: a drop test cut the
+     * connection and the UI kept spinning over an answer the server had
+     * already written. Hence try/finally. */
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      partialChunk += decoder.decode(value, { stream: true });
+        partialChunk += decoder.decode(value, { stream: true });
 
-      partialChunk = consumeNdjson(partialChunk, messageHandler);
+        partialChunk = consumeNdjson(partialChunk, messageHandler);
+      }
+
+      /* A last line with no trailing newline would otherwise be dropped. The
+       * decoder is flushed too, in case the chunk ended mid-codepoint. */
+      partialChunk += decoder.decode();
+      consumeNdjson(partialChunk + '\n', messageHandler);
+    } catch {
+      /* Network gone. Recovery below decides what to show. */
+    } finally {
+      await recoverIfUnfinished(chatId!, messageId);
     }
 
-    /* A last line with no trailing newline would otherwise be dropped. The
-     * decoder is flushed too, in case the chunk ended mid-codepoint. */
-    partialChunk += decoder.decode();
-    consumeNdjson(partialChunk + '\n', messageHandler);
   };
 
   return (
