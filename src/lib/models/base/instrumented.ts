@@ -14,6 +14,8 @@ export type LLMCallContext = CallContext & {
   provider?: string;
   model?: string;
   role?: string;
+  /* What the call ran with, e.g. the writer's answer style. */
+  label?: string;
 };
 type Pending = {
   method: string;
@@ -59,8 +61,8 @@ class InstrumentedLLM<CONFIG> extends BaseLLM<CONFIG> {
   /* Returns a wrapper around the same underlying model that tags its rows with
    * a role. Cheap -- no provider state is copied -- so call sites can do it
    * inline per call. */
-  withRole(role: string): InstrumentedLLM<CONFIG> {
-    return new InstrumentedLLM(this.inner, { ...this.ctx, role });
+  withRole(role: string, label?: string): InstrumentedLLM<CONFIG> {
+    return new InstrumentedLLM(this.inner, { ...this.ctx, role, label });
   }
 
   private begin(method: string, inputText: string): Pending {
@@ -77,6 +79,7 @@ class InstrumentedLLM<CONFIG> extends BaseLLM<CONFIG> {
         kind: 'model',
         method,
         role: this.ctx.role,
+        label: this.ctx.label,
         provider: this.ctx.provider,
         model: this.ctx.model,
         startedAt,
@@ -171,7 +174,16 @@ class InstrumentedLLM<CONFIG> extends BaseLLM<CONFIG> {
  * Tags a model's telemetry with the job it is doing. A no-op when the model is
  * not instrumented, so call sites need no conditional.
  */
-export const withRole = <T extends BaseLLM<any>>(llm: T, role: string): T =>
-  llm instanceof InstrumentedLLM ? (llm.withRole(role) as unknown as T) : llm;
+/* `label` records what the call ran with -- the writer's answer style, say --
+ * so a stored run can be read back without inferring its settings from the
+ * message row, which only ever holds the most recent value. */
+export const withRole = <T extends BaseLLM<any>>(
+  llm: T,
+  role: string,
+  label?: string,
+): T =>
+  llm instanceof InstrumentedLLM
+    ? (llm.withRole(role, label) as unknown as T)
+    : llm;
 
 export default InstrumentedLLM;

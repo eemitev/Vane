@@ -32,25 +32,25 @@ const STYLES = [
   {
     key: 'auto',
     title: 'Auto',
-    description: 'Length follows the research depth you picked.',
+    description: 'Follows your research depth.',
     icon: <Sparkles size={16} className="text-[#9C27B0]" />,
   },
   {
     key: 'brief',
     title: 'Brief',
-    description: 'Answer the question in a few sentences, no headings.',
+    description: 'A few sentences, no headings.',
     icon: <StickyNote size={16} className="text-[#FF9800]" />,
   },
   {
     key: 'standard',
     title: 'Standard',
-    description: 'A short answer with a few supporting points.',
+    description: 'Short answer, a few points.',
     icon: <FileText size={16} className="text-[#4CAF50]" />,
   },
   {
     key: 'deep',
     title: 'Deep',
-    description: 'A full written report with headings and analysis.',
+    description: 'Full report with headings.',
     icon: <Newspaper size={16} className="text-[#2196F3]" />,
   },
 ];
@@ -138,7 +138,7 @@ const AnswerLength = () => {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.1, ease: 'easeOut' }}
-                  className="origin-bottom-left flex flex-col space-y-2 bg-light-primary dark:bg-dark-primary border rounded-lg border-light-200 dark:border-dark-200 w-full p-2 max-h-[240px] overflow-y-auto"
+                  className="origin-bottom-left flex flex-col space-y-1 bg-light-primary dark:bg-dark-primary border rounded-lg border-light-200 dark:border-dark-200 w-full p-2 max-h-[70vh] overflow-y-auto"
                 >
                   {STYLES.map((style) => (
                     <PopoverButton

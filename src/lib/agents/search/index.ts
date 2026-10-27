@@ -285,7 +285,11 @@ class SearchAgent {
 
     setCurrent(session, researchBlockId, 'writing', 'Writing the answer');
 
-    const answerStream = withRole(input.config.llm, 'writer').streamText({
+    const answerStream = withRole(
+      input.config.llm,
+      'writer',
+      `${input.config.mode}/${answerStyle}`,
+    ).streamText({
       /* The writer composes from facts the extractor already pulled out, so
        * what it needs is citation discipline, not deliberation -- and thinking
        * costs it roughly double the wall time. The roles that actually choose

@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 
 interface Call {
   id: number;
@@ -140,10 +140,66 @@ const LlmCallTimeline = ({
    * it is gone, so it will never be closed. */
   const [gaveUp, setGaveUp] = useState(false);
 
+  /* A message can hold more than one run: the original search, then a rewrite
+   * at a different length, which re-runs only the writer under the same
+   * messageId. Drawn together they share one time axis spanning the gap
+   * between them, so the original compresses to a sliver.
+   *
+   * Split on structure rather than elapsed time. Every run ends with its
+   * writer, and a rewrite is a lone writer call -- so a new run begins at the
+   * first call after a writer. An earlier version split on a 90-second idle
+   * gap and was wrong on real data: one rewrite started 23 seconds after the
+   * answer it replaced, and would have been folded into the search.
+   *
+   * A long idle gap is kept as a secondary split, for a run that failed before
+   * reaching its writer and so never closed. */
+  const RUN_GAP_MS = 5 * 60_000;
+
+  const runs = useMemo(() => {
+    const sorted = [...calls].sort(
+      (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt),
+    );
+
+    const grouped: Call[][] = [];
+    let closed = true;
+
+    for (const call of sorted) {
+      const last = grouped[grouped.length - 1];
+      const prev = last?.[last.length - 1];
+
+      const idle = prev
+        ? Date.parse(call.startedAt) -
+          (Date.parse(prev.startedAt) + (prev.durationMs ?? 0))
+        : 0;
+
+      if (closed || !last || idle > RUN_GAP_MS) {
+        grouped.push([call]);
+      } else {
+        last.push(call);
+      }
+
+      /* The writer is the last thing a run does. */
+      closed = call.role === 'writer';
+    }
+
+    return grouped;
+  }, [calls]);
+
+  const [runIndex, setRunIndex] = useState(0);
+
+  /* Follow the newest run as it arrives, but leave a deliberate choice alone. */
+  const [pinned, setPinned] = useState(false);
+
+  useEffect(() => {
+    if (!pinned && runs.length) setRunIndex(runs.length - 1);
+  }, [runs.length, pinned]);
+
+  const shown = runs[Math.min(runIndex, Math.max(0, runs.length - 1))] ?? [];
+
   /* Open rows have no duration yet, so their bars are measured against the
    * clock here rather than waiting for the server to tell us how long they
    * took -- which it cannot do until they finish. */
-  const hasRunning = calls.some((c) => c.durationMs === null);
+  const hasRunning = shown.some((c) => c.durationMs === null);
 
   useEffect(() => {
     if (!messageId) return;
@@ -220,20 +276,20 @@ const LlmCallTimeline = ({
 
   /* The timeline is laid out against wall-clock time, not call order, so
    * overlapping bars are exactly the concurrent fan-out. */
-  const t0 = calls.length ? Date.parse(calls[0].startedAt) : 0;
+  const t0 = shown.length ? Date.parse(shown[0].startedAt) : 0;
   const endOf = (c: Call) =>
     c.durationMs === null
       ? Math.max(now, Date.parse(c.startedAt))
       : Date.parse(c.startedAt) + c.durationMs;
 
-  const tEnd = calls.reduce((max, c) => Math.max(max, endOf(c)), t0 + 1);
+  const tEnd = shown.reduce((max, c) => Math.max(max, endOf(c)), t0 + 1);
   const span = Math.max(tEnd - t0, 1);
 
   /* Usually one model for the whole run, but a reconnect or a settings change
    * mid-run can mix them, so show every distinct one rather than the first. */
   const models = Array.from(
     new Set(
-      calls
+      shown
         .map((c) => [c.provider, c.model].filter(Boolean).join(' / '))
         .filter(Boolean),
     ),
@@ -246,11 +302,11 @@ const LlmCallTimeline = ({
     | { type: 'call'; call: Call; nested?: boolean }
     | { type: 'embedGroup'; calls: Call[] };
 
-  const embeds = calls.filter((c) => c.kind === 'embed');
+  const embeds = shown.filter((c) => c.kind === 'embed');
   const rows: Row[] = [];
   let groupPlaced = false;
 
-  for (const call of calls) {
+  for (const call of shown) {
     if (call.kind !== 'embed') {
       rows.push({ type: 'call', call });
       continue;
@@ -295,10 +351,72 @@ const LlmCallTimeline = ({
       : []),
   ];
 
-  if (calls.length === 0) return null;
+  if (shown.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-3">
+      {runs.length > 1 && (
+        <div className="flex flex-row items-center gap-2 text-xs text-black/60 dark:text-white/60">
+          <span>Run</span>
+          <select
+            value={runIndex}
+            onChange={(e) => {
+              setPinned(true);
+              setRunIndex(Number(e.target.value));
+            }}
+            className="bg-light-secondary dark:bg-dark-secondary border border-light-200 dark:border-dark-200 rounded-lg px-2 py-1 text-xs text-black dark:text-white focus:outline-none"
+          >
+            {runs.map((run, i) => {
+              /* Name a run by what it did: a rewrite is writer-only, the
+               * original search is everything else. */
+              const writerOnly = run.every((c) => c.role === 'writer');
+              const at = new Date(run[0].startedAt).toLocaleTimeString();
+
+              /* The writer records what it ran with -- "quality/brief" -- so a
+               * run can be identified by its settings rather than by guessing
+               * from the message row, which only holds the most recent value
+               * and is overwritten by every rewrite. */
+              const settings = run.find((c) => c.role === 'writer')?.label;
+              const secs = Math.round(
+                (Math.max(
+                  ...run.map(
+                    (c) => Date.parse(c.startedAt) + (c.durationMs ?? 0),
+                  ),
+                ) -
+                  Date.parse(run[0].startedAt)) /
+                  1000,
+              );
+
+              return (
+                <option key={i} value={i}>
+                  {[
+                    writerOnly ? 'Rewrite' : 'Search',
+                    settings,
+                    at,
+                    `${run.length} calls`,
+                    `${secs}s`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </option>
+              );
+            })}
+          </select>
+          {runIndex !== runs.length - 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                setPinned(false);
+                setRunIndex(runs.length - 1);
+              }}
+              className="underline underline-offset-2 hover:text-black dark:hover:text-white"
+            >
+              latest
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3 text-xs text-black/60 dark:text-white/60">
         {legend.map(({ key, color, text }) => (
           <span key={key} className="flex items-center gap-1.5">
@@ -310,7 +428,7 @@ const LlmCallTimeline = ({
           {models.join(', ')}
         </span>
         <span>
-          {calls.length} calls over {ms(span)} wall clock
+          {shown.length} calls over {ms(span)} wall clock
         </span>
       </div>
 

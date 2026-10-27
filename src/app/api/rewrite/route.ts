@@ -108,7 +108,11 @@ export const POST = async (req: Request) => {
     ${previous}
     </previous_answer>`;
 
-    const stream = withRole(llm, 'writer').streamText({
+    const stream = withRole(
+      llm,
+      'writer',
+      `${row.mode ?? 'speed'}/${body.answerStyle}`,
+    ).streamText({
       options: {
         maxTokens: MAX_TOKENS[body.answerStyle],
         disableThinking: true,
