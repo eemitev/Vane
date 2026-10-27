@@ -11,7 +11,7 @@
 > Improvements from anyone are very welcome — open an issue or a PR. I'd like this to be
 > genuinely good, not just good enough for me.
 
-# Vane 🔍
+# Vane-NG 🔍
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/ItzCrazyKns/Vane?style=social)](https://github.com/ItzCrazyKns/Vane/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/ItzCrazyKns/Vane?style=social)](https://github.com/ItzCrazyKns/Vane/network/members)
